@@ -1,0 +1,104 @@
+alias: "DEMO Notifiche Interattive"
+description: >-
+  Automazione dimostrativa unica: alla pressione dell'helper "Test Notifiche
+  Interattive" invia una notifica con 4 pulsanti azione a TUTTI i dispositivi
+  collegati a Home Assistant (tutte le entità del dominio notify). Qualunque
+  pulsante venga premuto, la stessa automazione lo intercetta e invia una
+  notifica di conferma con l'indicazione di quale pulsante è stato premuto.
+  Serve solo come esempio di base da cui prendere spunto.
+mode: queued
+max: 10
+triggers:
+  - trigger: state
+    entity_id: input_button.test_notifiche_interattive
+    id: "invia_notifica"
+    note: "Sostituisci con qualunque altro trigger: qui usiamo un pulsante helper perché lo può creare chiunque in 10 secondi."
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "PULSANTE_1_PREMUTO"
+    id: "pulsante_1"
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "PULSANTE_2_PREMUTO"
+    id: "pulsante_2"
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "PULSANTE_3_PREMUTO"
+    id: "pulsante_3"
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "PULSANTE_4_PREMUTO"
+    id: "pulsante_4"
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: "invia_notifica"
+        sequence:
+          - repeat:
+              # Cicla su TUTTE le entità notify presenti in Home Assistant
+              # (tutti i dispositivi con l'app companion collegata) e
+              # ricostruisce il nome del servizio legacy per-dispositivo
+              # (notify.mobile_app_<slug>) da ciascuna entità notify.<slug>.
+              # Serve il servizio legacy perché notify.send_message, su
+              # molte installazioni, NON accetta il campo "data" con le
+              # azioni: senza "data" non è possibile allegare i pulsanti.
+              for_each: >-
+                {{ states.notify
+                   | map(attribute='entity_id')
+                   | map('regex_replace', '^notify\.', 'notify.mobile_app_')
+                   | list }}
+              sequence:
+                - action: "{{ repeat.item }}"
+                  data:
+                    title: "🔔 Test Notifiche Interattive"
+                    message: >-
+                      Questa è una notifica di prova con 4 pulsanti azione.
+                      Premi uno dei pulsanti per vedere come Home Assistant
+                      reagisce.
+                    data:
+                      tag: "demo-notifiche-interattive"
+                      actions:
+                        - action: "PULSANTE_1_PREMUTO"
+                          title: "Pulsante 1"
+                        - action: "PULSANTE_2_PREMUTO"
+                          title: "Pulsante 2"
+                        - action: "PULSANTE_3_PREMUTO"
+                          title: "Pulsante 3"
+                        - action: "PULSANTE_4_PREMUTO"
+                          title: "Pulsante 4"
+                  continue_on_error: true
+            note: "Chiama notify.mobile_app_<slug> (non notify.send_message) uno per dispositivo: è l'unico servizio che accetta data.actions per i pulsanti. continue_on_error evita che un dispositivo che fallisce blocchi gli altri."
+      - conditions:
+          - condition: trigger
+            id:
+              - "pulsante_1"
+              - "pulsante_2"
+              - "pulsante_3"
+              - "pulsante_4"
+        sequence:
+          - variables:
+              # trigger.id identifica quale dei 4 trigger evento ha fatto
+              # scattare l'automazione, senza dover leggere manualmente
+              # trigger.event.data.action.
+              pulsante_premuto: >-
+                {% set nomi = {'pulsante_1': 'Pulsante 1', 'pulsante_2': 'Pulsante 2',
+                'pulsante_3': 'Pulsante 3', 'pulsante_4': 'Pulsante 4'} %}
+                {{ nomi[trigger.id] }}
+          - repeat:
+              for_each: >-
+                {{ states.notify
+                   | map(attribute='entity_id')
+                   | map('regex_replace', '^notify\.', 'notify.mobile_app_')
+                   | list }}
+              sequence:
+                - action: "{{ repeat.item }}"
+                  data:
+                    title: "✅ Pulsante ricevuto"
+                    message: "Hai premuto: {{ pulsante_premuto }}"
+                  continue_on_error: true
+            note: "Stesso pattern usato per l'invio iniziale: notify.mobile_app_<slug> per dispositivo invece di notify.send_message, con continue_on_error."
